@@ -1,0 +1,379 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FRANZ CUTE - SCORPION</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #050505;
+  overflow: hidden;
+  font-family: Arial, sans-serif;
+}
+
+canvas {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.title {
+  position: fixed;
+  bottom: 35px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #eee;
+  font-size: clamp(22px, 4vw, 40px);
+  font-weight: bold;
+  font-style: italic;
+  letter-spacing: 7px;
+  text-shadow: 0 0 12px #fff;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.hint {
+  position: fixed;
+  top: 24px;
+  left: 26px;
+  color: #999;
+  font-size: 11px;
+  letter-spacing: 3px;
+  line-height: 1.8;
+  pointer-events: none;
+}
+
+.label {
+  position: fixed;
+  top: 24px;
+  right: 26px;
+  color: #aaa;
+  font-size: 12px;
+  letter-spacing: 5px;
+  pointer-events: none;
+}
+
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div class="hint">
+  MOVE YOUR MOUSE<br>
+  TO CONTROL THE SCORPION
+</div>
+
+<div class="label">SCORPION</div>
+<div class="title">FRANZ CUTE</div>
+
+<script>
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+let W, H, dpr;
+const N = 52;
+const GAP = 9;
+const nodes = [];
+
+const mouse = {
+  x: innerWidth / 2,
+  y: innerHeight / 2
+};
+
+const head = {
+  x: mouse.x,
+  y: mouse.y
+};
+
+let angle = 0;
+let time = 0;
+
+function resize() {
+  W = innerWidth;
+  H = innerHeight;
+  dpr = Math.min(devicePixelRatio || 1, 1.5);
+
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+resize();
+
+for (let i = 0; i < N; i++) {
+  nodes.push({
+    x: W / 2 - i * GAP,
+    y: H / 2
+  });
+}
+
+window.addEventListener("resize", resize);
+
+function moveMouse(e) {
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - rect.left;
+  mouse.y = e.clientY - rect.top;
+}
+
+canvas.addEventListener("pointermove", moveMouse);
+canvas.addEventListener("pointerdown", moveMouse);
+
+function drawLine(x1, y1, x2, y2, width = 1, alpha = .8) {
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.lineWidth = width;
+  ctx.strokeStyle = `rgba(215,220,235,${alpha})`;
+  ctx.stroke();
+}
+
+function drawJoint(x, y, r = 1.5) {
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(235,240,255,.9)";
+  ctx.fill();
+}
+
+function tangent(i) {
+  const before = nodes[Math.max(0, i - 1)];
+  const after = nodes[Math.min(N - 1, i + 1)];
+
+  return Math.atan2(
+    after.y - before.y,
+    after.x - before.x
+  );
+}
+
+// Flexible segmented body
+function drawBody() {
+  for (let i = 1; i < N - 1; i++) {
+    const p = nodes[i];
+    const a = tangent(i);
+
+    const nx = -Math.sin(a);
+    const ny = Math.cos(a);
+
+    const taper = Math.sin(Math.PI * i / N);
+    const width = 3 + taper * 5;
+
+    const leftX = p.x + nx * width;
+    const leftY = p.y + ny * width;
+    const rightX = p.x - nx * width;
+    const rightY = p.y - ny * width;
+
+    // Segmented crossbars
+    drawLine(
+      leftX, leftY,
+      rightX, rightY,
+      1.15,
+      .4 + taper * .5
+    );
+
+    // Outer curved outlines
+    if (i % 2 === 0) {
+      drawLine(
+        leftX, leftY,
+        p.x + nx * (width + 2),
+        p.y + ny * (width + 2),
+        .6, .45
+      );
+
+      drawLine(
+        rightX, rightY,
+        p.x - nx * (width + 2),
+        p.y - ny * (width + 2),
+        .6, .45
+      );
+    }
+
+    // Small joints
+    if (i % 3 === 0) {
+      drawJoint(leftX, leftY, 1);
+      drawJoint(rightX, rightY, 1);
+    }
+  }
+
+  // Spine
+  ctx.beginPath();
+  ctx.moveTo(nodes[0].x, nodes[0].y);
+
+  for (let i = 1; i < N; i++) {
+    ctx.lineTo(nodes[i].x, nodes[i].y);
+  }
+
+  ctx.strokeStyle = "rgba(230,235,255,.45)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+// Legs that bend with the body
+function drawLegs() {
+  for (let i = 6; i < 39; i += 5) {
+    const p = nodes[i];
+    const a = tangent(i);
+    const nx = -Math.sin(a);
+    const ny = Math.cos(a);
+
+    const wave = Math.sin(time * 3 + i * .7) * 3;
+    const len = 17 + Math.sin(i * .6) * 5;
+
+    for (const side of [-1, 1]) {
+      const startX = p.x + nx * side * 4;
+      const startY = p.y + ny * side * 4;
+
+      const jointX = p.x + nx * side * (len * .65)
+        - Math.cos(a) * 5 + wave;
+      const jointY = p.y + ny * side * (len * .65)
+        - Math.sin(a) * 5;
+
+      const footX = p.x + nx * side * len
+        - Math.cos(a) * 15 + wave;
+      const footY = p.y + ny * side * len
+        - Math.sin(a) * 15;
+
+      drawLine(startX, startY, jointX, jointY, 1.2, .7);
+      drawLine(jointX, jointY, footX, footY, 1, .65);
+
+      drawJoint(jointX, jointY, 1.5);
+      drawJoint(footX, footY, 1);
+    }
+  }
+}
+
+// Head with small pincers
+function drawHead() {
+  const p = nodes[0];
+  const a = tangent(1);
+  const direction = Math.atan2(
+    p.y - nodes[2].y,
+    p.x - nodes[2].x
+  );
+
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(direction);
+
+  // Head
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 7, 5, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = "#eee";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  // Eyes
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.arc(3, side * 3, 1.2, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+  }
+
+  // Pincers
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(3, side * 3);
+    ctx.lineTo(13, side * 10);
+    ctx.lineTo(22, side * 7);
+    ctx.lineTo(17, side * 13);
+    ctx.strokeStyle = "#dce2f5";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    drawJoint(13, side * 10, 1.5);
+  }
+
+  ctx.restore();
+}
+
+// Tail at the back
+function drawTail() {
+  const p = nodes[N - 1];
+  const a = tangent(N - 2);
+
+  const x1 = p.x;
+  const y1 = p.y;
+  const x2 = x1 - Math.cos(a) * 13;
+  const y2 = y1 - Math.sin(a) * 13;
+  const x3 = x2 - Math.cos(a - .5) * 15;
+  const y3 = y2 - Math.sin(a - .5) * 15;
+
+  drawLine(x1, y1, x2, y2, 2, .8);
+  drawLine(x2, y2, x3, y3, 1.5, .9);
+
+  ctx.beginPath();
+  ctx.moveTo(x3, y3);
+  ctx.lineTo(
+    x3 - Math.cos(a - .5) * 9 + Math.sin(a) * 4,
+    y3 - Math.sin(a - .5) * 9 - Math.cos(a) * 4
+  );
+  ctx.lineTo(
+    x3 - Math.cos(a - .5) * 4 - Math.sin(a) * 4,
+    y3 - Math.sin(a - .5) * 4 + Math.cos(a) * 4
+  );
+  ctx.closePath();
+
+  ctx.strokeStyle = "#eee";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+}
+
+function update() {
+  // Head follows the mouse
+  head.x += (mouse.x - head.x) * .18;
+  head.y += (mouse.y - head.y) * .18;
+
+  nodes[0].x = head.x;
+  nodes[0].y = head.y;
+
+  // Each body segment follows the previous segment
+  for (let i = 1; i < N; i++) {
+    const prev = nodes[i - 1];
+    const cur = nodes[i];
+
+    let dx = cur.x - prev.x;
+    let dy = cur.y - prev.y;
+    let dist = Math.hypot(dx, dy);
+
+    if (dist < .001) {
+      dx = -1;
+      dy = 0;
+      dist = 1;
+    }
+
+    const desiredX = prev.x + dx / dist * GAP;
+    const desiredY = prev.y + dy / dist * GAP;
+
+    cur.x += (desiredX - cur.x) * .85;
+    cur.y += (desiredY - cur.y) * .85;
+  }
+}
+
+function animate() {
+  ctx.clearRect(0, 0, W, H);
+
+  update();
+  time += .035;
+
+  // Draw creature
+  drawTail();
+  drawLegs();
+  drawBody();
+  drawHead();
+
+  requestAnimationFrame(animate);
+}
+
+animate();
+</script>
+</body>
+</html>
